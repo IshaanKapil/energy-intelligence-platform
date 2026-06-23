@@ -1,0 +1,7 @@
+{
+  "MAE": 469.298,
+  "RMSE": 623.553,
+  "MAPE_pct": 3.033,
+  "interval_coverage_80pct": 82.7,
+  "n_test": 6250
+}

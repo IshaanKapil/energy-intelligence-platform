@@ -1,0 +1,26 @@
+[
+  {
+    "feature": "load_mw_lag24",
+    "mean_abs_shap": 1424.158
+  },
+  {
+    "feature": "temperature_c",
+    "mean_abs_shap": 440.638
+  },
+  {
+    "feature": "dayofweek",
+    "mean_abs_shap": 367.171
+  },
+  {
+    "feature": "hour",
+    "mean_abs_shap": 204.188
+  },
+  {
+    "feature": "load_mw_lag168",
+    "mean_abs_shap": 175.84
+  },
+  {
+    "feature": "load_mw_lag48",
+    "mean_abs_shap": 147.387
+  }
+]
