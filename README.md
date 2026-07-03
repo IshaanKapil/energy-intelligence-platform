@@ -4,16 +4,18 @@
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 ![Tests](https://img.shields.io/badge/tests-15%20passing-brightgreen)
 
-A **live**, end-to-end machine-learning platform for grid energy. It ingests
-**real, current** electricity demand and weather, forecasts load & solar with
-calibrated uncertainty, optimizes battery dispatch for **cost and carbon**,
-detects anomalies, explains its predictions with SHAP, and answers natural-language
-questions via an LLM copilot.
+Hi! This is my 3rd-year CS project — a machine-learning platform for grid energy.
+It pulls **real, current** electricity demand and weather, forecasts load & solar,
+optimizes when a battery should charge/discharge, flags anomalies, explains its
+predictions, and lets you ask questions in plain English via an LLM.
 
-> **Live data, not a frozen dataset.** Load comes from the **EIA Open Data API**
-> (real hourly US grid demand) and weather from **Open-Meteo** — the models are
-> retrained on a rolling 1-year window, so every forecast is based on data through
-> *yesterday*.
+I started it with a synthetic dataset, then swapped in real live data because I
+wanted the forecasts to actually mean something. Along the way I learned a lot
+about calibrated uncertainty, linear programming, and gluing real APIs together.
+
+> **It uses live data, not a frozen CSV.** Load comes from the **EIA Open Data API**
+> (real hourly US grid demand) and weather from **Open-Meteo**. I retrain on a
+> rolling 1-year window, so the forecasts are based on data through *yesterday*.
 
 ---
 
@@ -21,25 +23,26 @@ questions via an LLM copilot.
 
 | Model | Metric | Result |
 |---|---|---|
-| **Load forecast** (LightGBM, day-ahead) | MAPE | **5.95%** |
-| **Forecast uncertainty** (Conformalized Quantile Regression) | 80% interval coverage | **79.1%** — calibrated (target 80%) |
-| **Solar forecast** (LightGBM from weather) | R² | **0.82** |
-| **Battery optimizer** (OR-Tools LP) | cost saving vs grid-only | **~6–7%** |
-| **Test set size** | | 1,534 load / 1,572 solar hours |
+| Load forecast (LightGBM, day-ahead) | MAPE | **5.95%** |
+| Forecast uncertainty (Conformalized Quantile Regression) | 80% interval coverage | **79.1%** (target 80%) |
+| Solar forecast (LightGBM from weather) | R² | **0.82** |
+| Battery optimizer (OR-Tools LP) | cost saving vs grid-only | **~6–7%** |
+| Test set size | | 1,534 load / 1,572 solar hours |
 
-*Evaluated on real PJM demand. A calibrated 80% band (~80% coverage) is the key
-signal that the uncertainty estimate is trustworthy, not decorative.*
+The thing I'm most happy about is the **79.1% coverage** — it means when the model
+says "80% confident," it's actually right ~80% of the time. Getting the uncertainty
+*calibrated* was harder than getting the point forecast accurate.
 
 ---
 
-## 🧩 Features (6-tab dashboard + REST API)
+## 🧩 What it does (6-tab dashboard + a REST API)
 
-1. **📈 Live Forecast** — day-ahead load & solar with an 80% confidence band, plus a backtest-vs-actual view
-2. **🔋 Battery Optimizer** — OR-Tools linear program; **Cost / Balanced / Green** modes trading off $ vs CO₂
-3. **🔬 What-if Simulator** — resize battery/solar and see savings change, with a full **ROI engine** (payback, NPV, IRR)
-4. **🚨 Anomaly Detection** — Isolation Forest flags unusual load hours (winter cold-snap clusters)
-5. **🧠 SHAP Explainability** — global + local explanations of what drives each forecast
-6. **🤖 AI Copilot** — LLM (Groq / Llama-3.3-70B) grounded in live platform numbers
+1. **📈 Live Forecast** — day-ahead load & solar with an 80% confidence band + a backtest-vs-actual view
+2. **🔋 Battery Optimizer** — an OR-Tools linear program; **Cost / Balanced / Green** modes trade off money vs CO₂
+3. **🔬 What-if Simulator** — resize the battery/solar and watch savings change, plus an **ROI calculator** (payback, NPV, IRR)
+4. **🚨 Anomaly Detection** — Isolation Forest flags unusual load hours
+5. **🧠 SHAP Explainability** — shows what drives each forecast
+6. **🤖 AI Copilot** — an LLM (Groq / Llama-3.3-70B) that answers questions using the platform's live numbers
 
 ---
 
@@ -51,7 +54,7 @@ pip install -r requirements.txt
 # 1. Pull ~1 year of live data (free EIA key: https://www.eia.gov/opendata/)
 python fetch_real_data.py --eia-key YOUR_EIA_KEY
 
-# 2. Train models + optimizer + SHAP
+# 2. Train the models + optimizer + SHAP
 python run_all.py
 python src/anomaly/detect.py
 
@@ -68,7 +71,7 @@ uvicorn src.api.main:app --reload      # http://localhost:8000/docs
 ```bash
 pytest tests/ -v      # 15 tests: optimizer constraints, ROI math, pricing/carbon
 ```
-CI runs the suite on every push via GitHub Actions.
+GitHub Actions runs these on every push.
 
 ---
 
@@ -84,7 +87,7 @@ energy-copilot/
 │   │   └── train_solar.py         solar model
 │   ├── optimizer/
 │   │   ├── battery.py             OR-Tools dispatch LP + TOU price + carbon
-│   │   └── roi.py                 payback / NPV / IRR engine
+│   │   └── roi.py                 payback / NPV / IRR
 │   ├── anomaly/detect.py          Isolation Forest anomaly detection
 │   ├── explain/shap_explain.py    SHAP explainability
 │   ├── copilot/chat.py            LLM copilot (Groq)
@@ -100,29 +103,29 @@ energy-copilot/
 
 ---
 
-## 💬 Worth explaining in interviews
+## 🛠️ Things I learned / would explain
 
-- **Live data pipeline:** the EIA API is paginated past its 5,000-row cap to pull a
-  full year; weather merges Open-Meteo's *archive* API (older than 5 days) with the
-  *forecast* API (recent), since neither alone covers the whole span.
-- **No data leakage:** every lag/rolling feature uses a horizon ≥ 24h, so the model
-  is an honest *day-ahead* forecaster (`features.py`).
-- **Calibrated uncertainty:** raw quantile bands were overconfident, so I added
-  **Conformalized Quantile Regression** — a held-out calibration split widens the
-  band to hit ~80% coverage (measured: 79.1%).
-- **The optimizer is a real LP:** decision variables (grid/charge/discharge/SOC),
-  power-balance + SOC-dynamics + rate constraints, objective = minimize cost (+carbon).
-  Solved exactly with OR-Tools GLOP — arbitrage is *emergent*, not hard-coded.
-- **Cost vs carbon:** grid carbon follows a duck curve (cleanest midday, dirtiest in
-  the evening peak) *decorrelated* from price, so Green Mode produces a genuinely
-  different dispatch than Cost Mode.
-- **Honest ROI:** the ROI engine openly shows that energy arbitrage alone rarely pays
-  back grid-scale storage — real projects stack demand-charge, capacity, and resilience
-  value that aren't modelled here.
+- **Live data was fiddly.** The EIA API caps responses at 5,000 rows, so I had to
+  paginate to get a full year. And Open-Meteo's forecast API only goes back ~92 days,
+  so for older weather I had to fall back to their archive API and stitch the two together.
+- **Avoiding data leakage.** Every lag/rolling feature uses a horizon ≥ 24h, so the
+  model can't "cheat" by seeing data it wouldn't have at prediction time.
+- **Calibrated uncertainty (the part I'm proud of).** My first quantile bands were
+  overconfident, so I added **Conformalized Quantile Regression** — a held-out
+  calibration split that widens the band until it actually hits ~80% coverage.
+- **The optimizer is a real linear program**, not if-else rules. I set up the decision
+  variables and constraints and let OR-Tools solve it — the "charge cheap, discharge
+  at peak" behaviour *emerges* from the math.
+- **Cost vs carbon.** Grid carbon is dirtiest in the evening peak and cleanest midday
+  (solar), which is different from when it's most expensive — so "Green Mode" actually
+  gives a different schedule than "Cost Mode".
 
-## Modeling assumptions (be ready to defend)
-- Load is scaled to a **campus-microgrid magnitude** (~16 MW mean) from the real
-  regional PJM signal, so the 20 MW solar plant and 40 MWh battery are meaningfully sized.
-- **Solar** is derived from irradiance × a hypothetical 20 MW plant (a proxy, not metered generation).
-- **TOU price** ($80 peak / $40 off-peak) and **carbon intensity** are realistic proxies,
-  not live market feeds.
+## ⚠️ Honest limitations (I know these aren't perfect)
+
+- **Load is scaled** from the real regional PJM signal down to a ~16 MW campus-microgrid
+  size, so the battery/solar are meaningfully sized against it.
+- **Solar is a proxy** — derived from irradiance × a hypothetical 20 MW plant, not real
+  metered generation.
+- **Prices and carbon intensity are realistic proxies**, not live market data.
+- The ROI tool honestly shows that battery arbitrage *alone* usually doesn't pay back —
+  real projects need extra value streams (demand charges, capacity payments) I didn't model.
