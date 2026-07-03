@@ -1,83 +1,128 @@
-# Energy Intelligence Platform
+# ⚡ Energy Intelligence Platform
 
-AI-powered energy platform: forecasts industrial load & solar generation,
-optimizes battery dispatch to cut cost, quantifies forecast uncertainty,
-and explains its predictions.
+![CI](https://github.com/YOUR-USERNAME/energy-intelligence-platform/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![Tests](https://img.shields.io/badge/tests-15%20passing-brightgreen)
 
-> **Status: ~50% built (the core "spine").** Forecasting, uncertainty,
-> optimization, explainability, and the API are working with trained models
-> and real metrics. Dashboard, anomaly detection, and AI copilot are next.
+A **live**, end-to-end machine-learning platform for grid energy. It ingests
+**real, current** electricity demand and weather, forecasts load & solar with
+calibrated uncertainty, optimizes battery dispatch for **cost and carbon**,
+detects anomalies, explains its predictions with SHAP, and answers natural-language
+questions via an LLM copilot.
+
+> **Live data, not a frozen dataset.** Load comes from the **EIA Open Data API**
+> (real hourly US grid demand) and weather from **Open-Meteo** — the models are
+> retrained on a rolling 1-year window, so every forecast is based on data through
+> *yesterday*.
 
 ---
 
-## ✅ What works right now
+## 📊 Results (on live data, held-out test set)
 
-| Component | File | Result |
+| Model | Metric | Result |
 |---|---|---|
-| **Load forecasting** (LightGBM, day-ahead) | `src/forecasting/train_load.py` | **MAE 3.02 MW · MAPE 9.1%** |
-| **Forecast uncertainty** (Conformalized Quantile Regression) | same | **80% interval → 84% coverage** (calibrated) |
-| **Solar forecasting** (LightGBM from weather) | `src/forecasting/train_solar.py` | **R² 0.99** (synthetic; expect lower on real data) |
-| **Battery optimizer** (OR-Tools linear program) | `src/optimizer/battery.py` | **~6–7% cost saving** vs grid-only |
-| **Explainability** (SHAP) | `src/explain/shap_explain.py` | top drivers: last-week load, day-of-week, temperature |
-| **REST API** (FastAPI) | `src/api/main.py` | `/forecast/load`, `/forecast/solar`, `/optimize/battery`, `/explain/drivers` |
+| **Load forecast** (LightGBM, day-ahead) | MAPE | **5.95%** |
+| **Forecast uncertainty** (Conformalized Quantile Regression) | 80% interval coverage | **79.1%** — calibrated (target 80%) |
+| **Solar forecast** (LightGBM from weather) | R² | **0.82** |
+| **Battery optimizer** (OR-Tools LP) | cost saving vs grid-only | **~6–7%** |
+| **Test set size** | | 1,534 load / 1,572 solar hours |
 
-See `reports/` for the generated plots.
-
-## 🔜 Remaining ~50%
-Dashboard (Next.js/Streamlit) · anomaly detection (Isolation Forest) ·
-what-if simulator · carbon optimizer · AI copilot (LangChain) · Docker + deploy.
+*Evaluated on real PJM demand. A calibrated 80% band (~80% coverage) is the key
+signal that the uncertainty estimate is trustworthy, not decorative.*
 
 ---
 
-## Quick start
+## 🧩 Features (6-tab dashboard + REST API)
+
+1. **📈 Live Forecast** — day-ahead load & solar with an 80% confidence band, plus a backtest-vs-actual view
+2. **🔋 Battery Optimizer** — OR-Tools linear program; **Cost / Balanced / Green** modes trading off $ vs CO₂
+3. **🔬 What-if Simulator** — resize battery/solar and see savings change, with a full **ROI engine** (payback, NPV, IRR)
+4. **🚨 Anomaly Detection** — Isolation Forest flags unusual load hours (winter cold-snap clusters)
+5. **🧠 SHAP Explainability** — global + local explanations of what drives each forecast
+6. **🤖 AI Copilot** — LLM (Groq / Llama-3.3-70B) grounded in live platform numbers
+
+---
+
+## 🚀 Quick start
 
 ```bash
 pip install -r requirements.txt
 
-# run the whole pipeline (data -> models -> shap -> optimizer)
-python run_all.py
+# 1. Pull ~1 year of live data (free EIA key: https://www.eia.gov/opendata/)
+python fetch_real_data.py --eia-key YOUR_EIA_KEY
 
-# start the API
-uvicorn src.api.main:app --reload
-# open http://127.0.0.1:8000/docs  (interactive Swagger UI)
+# 2. Train models + optimizer + SHAP
+python run_all.py
+python src/anomaly/detect.py
+
+# 3. Launch the dashboard
+export GROQ_API_KEY=YOUR_GROQ_KEY      # for the AI Copilot tab
+streamlit run dashboard.py             # http://localhost:8501
+
+# (optional) REST API
+uvicorn src.api.main:app --reload      # http://localhost:8000/docs
 ```
 
-## Project layout
+## 🧪 Tests
+
+```bash
+pytest tests/ -v      # 15 tests: optimizer constraints, ROI math, pricing/carbon
+```
+CI runs the suite on every push via GitHub Actions.
+
+---
+
+## 🗂️ Project layout
 
 ```
 energy-copilot/
-├── data/                       synthetic dataset + README (real-data swap)
+├── data/                          live dataset (EIA demand + Open-Meteo weather)
 ├── src/
 │   ├── forecasting/
-│   │   ├── features.py         leakage-safe feature engineering
-│   │   ├── train_load.py       load model + CQR uncertainty
-│   │   └── train_solar.py      solar model
-│   ├── optimizer/battery.py    OR-Tools battery dispatch LP
-│   ├── explain/shap_explain.py SHAP explainability
-│   └── api/main.py             FastAPI backend
-├── models/                     saved models + metrics.json
-├── reports/                    forecast / dispatch / SHAP plots
-├── generate_synthetic_data.py  realistic data generator
-├── fetch_real_data.py          pull REAL PJM + Open-Meteo data
-├── run_all.py                  one-command pipeline
-└── requirements.txt
+│   │   ├── features.py            leakage-safe feature engineering
+│   │   ├── train_load.py          load model + CQR uncertainty
+│   │   └── train_solar.py         solar model
+│   ├── optimizer/
+│   │   ├── battery.py             OR-Tools dispatch LP + TOU price + carbon
+│   │   └── roi.py                 payback / NPV / IRR engine
+│   ├── anomaly/detect.py          Isolation Forest anomaly detection
+│   ├── explain/shap_explain.py    SHAP explainability
+│   ├── copilot/chat.py            LLM copilot (Groq)
+│   └── api/main.py                FastAPI backend
+├── tests/                         pytest suite (15 tests)
+├── models/  reports/              saved models, metrics, plots
+├── dashboard.py                   6-tab Streamlit app
+├── fetch_real_data.py             live EIA + Open-Meteo data pipeline
+├── run_all.py                     one-command training pipeline
+├── Dockerfile                     containerized (API + dashboard)
+└── .github/workflows/ci.yml       CI
 ```
 
 ---
 
-## Things worth explaining in interviews
+## 💬 Worth explaining in interviews
 
-- **No data leakage:** every lag/rolling feature uses a horizon ≥ 24h, so the
-  model is an honest *day-ahead* forecaster (`features.py`).
-- **Calibrated uncertainty:** raw quantile bands were overconfident (48–62%
-  coverage), so I added **Conformalized Quantile Regression** — a held-out
-  calibration split widens the band to hit the target 80% coverage.
+- **Live data pipeline:** the EIA API is paginated past its 5,000-row cap to pull a
+  full year; weather merges Open-Meteo's *archive* API (older than 5 days) with the
+  *forecast* API (recent), since neither alone covers the whole span.
+- **No data leakage:** every lag/rolling feature uses a horizon ≥ 24h, so the model
+  is an honest *day-ahead* forecaster (`features.py`).
+- **Calibrated uncertainty:** raw quantile bands were overconfident, so I added
+  **Conformalized Quantile Regression** — a held-out calibration split widens the
+  band to hit ~80% coverage (measured: 79.1%).
 - **The optimizer is a real LP:** decision variables (grid/charge/discharge/SOC),
-  power-balance + SOC-dynamics + rate constraints, objective = minimize cost.
-  Solved exactly with OR-Tools GLOP. The dispatch plot shows it charging when
-  cheap and discharging at peaks — emergent arbitrage, not hard-coded rules.
-- **Honest about synthetic data:** solar R² 0.99 is inflated because synthetic
-  solar is near-deterministic from weather; on real Open-Meteo data expect a
-  lower R². Swap in real data with `fetch_real_data.py`.
-```
-```
+  power-balance + SOC-dynamics + rate constraints, objective = minimize cost (+carbon).
+  Solved exactly with OR-Tools GLOP — arbitrage is *emergent*, not hard-coded.
+- **Cost vs carbon:** grid carbon follows a duck curve (cleanest midday, dirtiest in
+  the evening peak) *decorrelated* from price, so Green Mode produces a genuinely
+  different dispatch than Cost Mode.
+- **Honest ROI:** the ROI engine openly shows that energy arbitrage alone rarely pays
+  back grid-scale storage — real projects stack demand-charge, capacity, and resilience
+  value that aren't modelled here.
+
+## Modeling assumptions (be ready to defend)
+- Load is scaled to a **campus-microgrid magnitude** (~16 MW mean) from the real
+  regional PJM signal, so the 20 MW solar plant and 40 MWh battery are meaningfully sized.
+- **Solar** is derived from irradiance × a hypothetical 20 MW plant (a proxy, not metered generation).
+- **TOU price** ($80 peak / $40 off-peak) and **carbon intensity** are realistic proxies,
+  not live market feeds.
