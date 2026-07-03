@@ -14,5 +14,3 @@ requests>=2.31
 streamlit>=1.35
 plotly>=5.20
 groq>=0.9
-# for fetch_real_data.py (optional, real data):
-kagglehub>=0.2

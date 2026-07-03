@@ -53,12 +53,27 @@ class DispatchResult:
     baseline_cost: float = 0.0     # cost with NO battery
     savings: float = 0.0
     savings_pct: float = 0.0
+    # carbon (kg CO2) — populated when a carbon intensity series is supplied
+    baseline_emissions: float = 0.0
+    optimized_emissions: float = 0.0
+    emissions_saved: float = 0.0
+    emissions_saved_pct: float = 0.0
     status: str = ""
 
 
-def optimize_battery(load, solar, price, cfg: BatteryConfig = BatteryConfig()) -> DispatchResult:
+def optimize_battery(load, solar, price, cfg: BatteryConfig = BatteryConfig(),
+                     carbon=None, carbon_price: float = 0.0) -> DispatchResult:
+    """Minimise grid cost (+ optional carbon penalty) over the horizon.
+
+    carbon:        optional list of grid carbon intensity (kg CO2 / MWh) per hour.
+    carbon_price:  $ per kg CO2 added to the objective. 0 = pure cost (Cost Mode);
+                   a small value (~0.05) prices in emissions (Balanced); a large
+                   value makes the optimiser chase the cleanest hours (Green Mode).
+    """
     T = len(load)
     assert len(solar) == T == len(price), "load/solar/price must be same length"
+    if carbon is None:
+        carbon = [0.0] * T
 
     solver = pywraplp.Solver.CreateSolver("GLOP")  # linear solver
     if solver is None:
@@ -83,8 +98,9 @@ def optimize_battery(load, solar, price, cfg: BatteryConfig = BatteryConfig()) -
     # (5) don't end emptier than we started (fair comparison across days)
     solver.Add(soc[T - 1] >= soc_start)
 
-    # objective: minimise grid energy cost
-    solver.Minimize(solver.Sum(grid[t] * price[t] for t in range(T)))
+    # objective: minimise grid cost (+ carbon penalty when carbon_price > 0)
+    solver.Minimize(solver.Sum(
+        grid[t] * (price[t] + carbon_price * carbon[t]) for t in range(T)))
 
     status = solver.Solve()
     status_name = {pywraplp.Solver.OPTIMAL: "OPTIMAL",
@@ -98,12 +114,21 @@ def optimize_battery(load, solar, price, cfg: BatteryConfig = BatteryConfig()) -
     res.charge = [chg[t].solution_value() for t in range(T)]
     res.discharge = [dis[t].solution_value() for t in range(T)]
     res.soc = [soc[t].solution_value() for t in range(T)]
-    res.optimized_cost = solver.Objective().Value()
+
+    # report actual $ cost and kg CO2 of the chosen dispatch (not the blended objective)
+    res.optimized_cost = sum(res.grid[t] * price[t] for t in range(T))
+    res.optimized_emissions = sum(res.grid[t] * carbon[t] for t in range(T))
 
     # baseline: no battery -> import whatever load isn't covered by solar
-    res.baseline_cost = sum(max(load[t] - solar[t], 0.0) * price[t] for t in range(T))
+    base_grid = [max(load[t] - solar[t], 0.0) for t in range(T)]
+    res.baseline_cost = sum(base_grid[t] * price[t] for t in range(T))
+    res.baseline_emissions = sum(base_grid[t] * carbon[t] for t in range(T))
+
     res.savings = res.baseline_cost - res.optimized_cost
     res.savings_pct = 100 * res.savings / res.baseline_cost if res.baseline_cost else 0.0
+    res.emissions_saved = res.baseline_emissions - res.optimized_emissions
+    res.emissions_saved_pct = (100 * res.emissions_saved / res.baseline_emissions
+                               if res.baseline_emissions else 0.0)
     return res
 
 
@@ -117,6 +142,42 @@ def tou_price(index) -> list:
         is_peak = (8 <= ts.hour < 20) and (ts.dayofweek < 5)
         prices.append(80.0 if is_peak else 40.0)
     return prices
+
+
+def carbon_intensity(index) -> list:
+    """Grid carbon intensity proxy (kg CO2 / MWh) — a realistic 'duck curve'.
+
+    Crucially, carbon does NOT track price one-for-one:
+      • Midday (10am-3pm): solar floods the grid -> CLEANEST (~250 kg/MWh),
+        even though it's still a peak *price* hour.
+      • Evening (5pm-10pm): sun is gone but demand stays high -> dirty gas/coal
+        'peakers' run -> DIRTIEST (~750 kg/MWh).
+      • Overnight (11pm-6am): low-carbon baseload (nuclear/wind) -> ~400 kg/MWh.
+      • Shoulder hours: ~500 kg/MWh.
+
+    Because the cleanest hour (midday) and the most expensive hours differ from
+    the dirtiest hour (evening), Cost Mode and Green Mode produce *different*
+    dispatch schedules — that's the whole point of offering both.
+    """
+    out = []
+    for ts in index:
+        h = ts.hour
+        if 10 <= h < 15:
+            out.append(250.0)      # midday solar -> cleanest
+        elif 17 <= h < 22:
+            out.append(750.0)      # evening peakers -> dirtiest
+        elif 0 <= h < 6 or h >= 23:
+            out.append(400.0)      # overnight baseload
+        else:
+            out.append(500.0)      # shoulder
+    return out
+
+
+# Optimisation modes -> carbon price ($/kg CO2) added to the objective.
+#   cost     : ignore carbon, minimise $ only
+#   balanced : price carbon near the social cost of carbon (~$50/tonne)
+#   green    : weight carbon heavily so the optimiser chases the cleanest hours
+CARBON_PRICE_MODES = {"cost": 0.0, "balanced": 0.05, "green": 1.0}
 
 
 if __name__ == "__main__":
@@ -155,7 +216,7 @@ if __name__ == "__main__":
     a1.set_title(f"Battery dispatch — saves {res.savings_pct:.1f}% vs grid-only")
     a2b = a2.twinx()
     a2.plot(df.index, res.soc, color="#7c3aed", label="SOC (MWh)")
-    a2b.plot(df.index, df.price, color="#9ca3af", ls=":", label="Price")
+    a2b.plot(df.index, price, color="#9ca3af", ls=":", label="Price")
     a2.set_ylabel("SOC (MWh)"); a2b.set_ylabel("Price")
     a2.grid(alpha=0.3); a2.legend(loc="upper left", fontsize=8); a2b.legend(loc="upper right", fontsize=8)
     fig.tight_layout(); fig.savefig(REPORTS / "battery_dispatch.png", dpi=120)

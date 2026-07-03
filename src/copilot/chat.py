@@ -34,8 +34,10 @@ def _load_context() -> dict:
 
 
 def _build_system_prompt(context: Optional[dict] = None) -> str:
-    if context is None:
-        context = _load_context()
+    merged = _load_context()          # always include SHAP drivers from disk
+    if context:
+        merged.update(context)        # caller-supplied live stats take priority
+    context = merged
 
     parts = [
         "You are an AI energy analyst copilot for an Energy Intelligence Platform.",
@@ -46,6 +48,12 @@ def _build_system_prompt(context: Optional[dict] = None) -> str:
         "If asked about things outside energy/power systems, politely redirect.",
         "",
     ]
+
+    if context.get("live_stats"):
+        parts.append("## Current Snapshot (use these exact numbers when asked)")
+        for k, v in context["live_stats"].items():
+            parts.append(f"  - {k}: {v}")
+        parts.append("")
 
     if context.get("shap_drivers"):
         parts.append("## Top Load Drivers (SHAP feature importance)")

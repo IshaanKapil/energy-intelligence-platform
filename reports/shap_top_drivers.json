@@ -1,26 +1,26 @@
 [
   {
     "feature": "load_mw_lag24",
-    "mean_abs_shap": 1424.158
-  },
-  {
-    "feature": "temperature_c",
-    "mean_abs_shap": 440.638
-  },
-  {
-    "feature": "dayofweek",
-    "mean_abs_shap": 367.171
-  },
-  {
-    "feature": "hour",
-    "mean_abs_shap": 204.188
-  },
-  {
-    "feature": "load_mw_lag168",
-    "mean_abs_shap": 175.84
+    "mean_abs_shap": 1.549
   },
   {
     "feature": "load_mw_lag48",
-    "mean_abs_shap": 147.387
+    "mean_abs_shap": 0.244
+  },
+  {
+    "feature": "doy_cos",
+    "mean_abs_shap": 0.241
+  },
+  {
+    "feature": "doy_sin",
+    "mean_abs_shap": 0.207
+  },
+  {
+    "feature": "dayofweek",
+    "mean_abs_shap": 0.198
+  },
+  {
+    "feature": "temperature_c",
+    "mean_abs_shap": 0.179
   }
 ]
